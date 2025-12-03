@@ -116,6 +116,11 @@ connectButton.onclick = async () => {
   } catch (e) {
     console.error(e);
     term.writeln(`Error: ${e.message}`);
+    if (transport) {
+      await transport.disconnect();
+      await transport.waitForUnlock(1500);
+    }
+    cleanUp();
   }
 };
 
@@ -245,17 +250,19 @@ consoleStartButton.onclick = async () => {
   resetButton.style.display = "initial";
   programDiv.style.display = "none";
 
-  await transport.connect(parseInt(consoleBaudrates.value));
+  await transport.connect(parseInt(consoleBaudrates.value)/*, { bufferSize: 1000 }*/);
   isConsoleClosed = false;
 
-  while (true && !isConsoleClosed) {
-    const readLoop = transport.rawRead();
-    const { value, done } = await readLoop.next();
+  while (!isConsoleClosed) {
+    const value = await transport.timedRead(100);
 
-    if (done || !value) {
+    if (value === undefined) {
+      console.log("Reader closed");
       break;
     }
-    term.write(value);
+    if (value.length) {
+      term.write(value);
+    }
   }
   console.log("quitting console");
 };
@@ -266,7 +273,7 @@ consoleStopButton.onclick = async () => {
     await transport.disconnect();
     await transport.waitForUnlock(1500);
   }
-  term.reset();
+  // term.reset();
   lblConsoleBaudrate.style.display = "initial";
   consoleBaudrates.style.display = "initial";
   consoleStartButton.style.display = "initial";
@@ -359,6 +366,11 @@ programButton.onclick = async () => {
     console.error(e);
     term.writeln(`Error: ${e.message}`);
   } finally {
+    if (transport) {
+      await transport.disconnect();
+      await transport.waitForUnlock(1500);
+    }
+    cleanUp();
     // Hide progress bars and show erase buttons
     for (let index = 1; index < table.rows.length; index++) {
       table.rows[index].cells[2].style.display = "none";

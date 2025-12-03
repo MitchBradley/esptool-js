@@ -394,7 +394,7 @@ export class ESPLoader {
   async readPacket(op: number | null = null, timeout = this.DEFAULT_TIMEOUT): Promise<[number, Uint8Array]> {
     // Check up-to next 100 packets for valid response packet
     for (let i = 0; i < 100; i++) {
-      const { value: p } = await this.transport.read(timeout).next();
+      const p = await this.transport.readSLIP(timeout);
       if (!p || p.length < 8) {
         continue;
       }
@@ -546,20 +546,22 @@ export class ESPLoader {
     if (resetStrategy) {
       await resetStrategy.reset();
     }
-    const waitingBytes = this.transport.inWaiting();
-    const readBytes = await this.transport.newRead(waitingBytes > 0 ? waitingBytes : 1, this.DEFAULT_TIMEOUT);
-
-    const binaryString = Array.from(readBytes, (byte) => String.fromCharCode(byte)).join("");
-    const regex = /boot:(0x[0-9a-fA-F]+)(.*waiting for download)?/;
-    const match = binaryString.match(regex);
+    const readBytes = await this.transport.timedRead(this.DEFAULT_TIMEOUT);
 
     let bootLogDetected = false,
       bootMode = "",
       downloadMode = false;
-    if (match) {
-      bootLogDetected = true;
-      bootMode = match[1];
-      downloadMode = !!match[2];
+
+    if (readBytes !== undefined) {
+      const binaryString = Array.from(readBytes, (byte) => String.fromCharCode(byte)).join("");
+      const regex = /boot:(0x[0-9a-fA-F]+)(.*waiting for download)?/;
+      const match = binaryString.match(regex);
+
+      if (match) {
+        bootLogDetected = true;
+        bootMode = match[1];
+        downloadMode = !!match[2];
+      }
     }
     let lastError = "";
 
@@ -1175,7 +1177,7 @@ export class ESPLoader {
 
     let resp = new Uint8Array(0);
     while (resp.length < size) {
-      const { value: packet } = await this.transport.read(this.FLASH_READ_TIMEOUT).next();
+      const packet = await this.transport.readSLIP(this.FLASH_READ_TIMEOUT);
 
       if (packet instanceof Uint8Array) {
         if (packet.length > 0) {
@@ -1230,7 +1232,7 @@ export class ESPLoader {
     this.info("Running stub...");
     await this.memFinish(stubFlasher.entry);
 
-    const { value: packetResult } = await this.transport.read(this.DEFAULT_TIMEOUT).next();
+    const packetResult = await this.transport.readSLIP(this.DEFAULT_TIMEOUT);
     const packetStr = String.fromCharCode(...packetResult);
 
     if (packetStr !== "OHAI") {
