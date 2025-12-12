@@ -6,7 +6,7 @@
   "scripts": {
     "build": "npm-run-all clean genDocs parcel:build",
     "clean": "shx rm -rf dist .parcel-cache",
-    "dev": "npm-run-all clean genDocs parcel:dev",
+    "dev": "npm-run-all clean parcel:dev",
     "genDocs": "npm run genDocs:root && shx mkdir -p dist && shx cp -r ../../docs dist",
     "genDocs:root": "cd ../.. && npm run genDocs",
     "parcel:dev": "cross-env PARCEL_WORKERS=0 parcel src/index.html",

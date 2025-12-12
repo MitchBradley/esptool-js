@@ -546,23 +546,32 @@ export class ESPLoader {
     if (resetStrategy) {
       await resetStrategy.reset();
     }
-    const readBytes = await this.transport.timedRead(this.DEFAULT_TIMEOUT);
 
     let bootLogDetected = false,
       bootMode = "",
       downloadMode = false;
 
-    if (readBytes !== undefined) {
-      const binaryString = Array.from(readBytes, (byte) => String.fromCharCode(byte)).join("");
-      const regex = /boot:(0x[0-9a-fA-F]+)(.*waiting for download)?/;
-      const match = binaryString.match(regex);
-
-      if (match) {
-        bootLogDetected = true;
-        bootMode = match[1];
-        downloadMode = !!match[2];
+    while (true) {
+      try {
+        const line = await this.transport.readLine(this.DEFAULT_TIMEOUT);
+        if (line.startsWith("rst:")) {
+          bootLogDetected = true;
+          const regex = /boot:(0x[0-9a-fA-F]+)/;
+          const match = line.match(regex);
+          if (match) {
+            bootMode = match[1];
+          }
+          continue;
+        }
+        if (line.startsWith("waiting for download")) {
+          downloadMode = true;
+          break;
+        }
+      } catch (error) {
+        break;
       }
     }
+
     let lastError = "";
 
     for (let i = 0; i < 5; i++) {

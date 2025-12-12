@@ -287,6 +287,25 @@ class Transport {
     }
   }
 
+  async readLine(timeout: number): Promise<string> {
+    let line: string = "";
+    while (true) {
+      const byte = await this.nextByte(timeout);
+      if (byte === undefined) {
+        throw new Error("Timeout");
+      }
+      if (byte == 0x0d) { // carriage return
+        continue;
+      }
+      if (byte == 0x0a) { // newline
+        const result = line;
+        line = "";
+        return result;
+      }
+      line += String.fromCharCode(byte);
+    }
+  }
+
   private SLIP_END = 0xc0;
   private SLIP_ESC = 0xdb;
   private SLIP_ESC_END = 0xdc;
@@ -380,6 +399,11 @@ class Transport {
     await this.device.setSignals({ dataTerminalReady: state });
   }
 
+  async setRtsDtr(rts: boolean, dtr: boolean) {
+    this._DTR_state = dtr;
+    await this.device.setSignals({ requestToSend: rts, dataTerminalReady: dtr });
+  }
+
   /**
    * Connect to serial device using the Webserial open method.
    * @param {number} baud Number baud rate for serial connection. Default is 115200.
@@ -422,7 +446,7 @@ class Transport {
     // if (this.device.readable?.locked) {
     //   await this.reader?.cancel();
     // }
-    await this.waitForUnlock(400);
+//    await this.waitForUnlock(400);
     await this.device.close();
     // this.reader = undefined;
   }

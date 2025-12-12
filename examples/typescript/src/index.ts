@@ -254,14 +254,14 @@ consoleStartButton.onclick = async () => {
   isConsoleClosed = false;
 
   while (!isConsoleClosed) {
-    const value = await transport.timedRead(100);
-
-    if (value === undefined) {
-      console.log("Reader closed");
-      break;
-    }
-    if (value.length) {
-      term.write(value);
+    try {
+      const line = await transport.readLine(1000);
+      term.write(line + '\r\n');
+    } catch (error) {
+      if (error.message != "Timeout") {
+        console.log("Reader closed with error ", error);
+        break;
+      }
     }
   }
   console.log("quitting console");
