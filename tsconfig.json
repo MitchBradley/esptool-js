@@ -10,7 +10,7 @@
     "noFallthroughCasesInSwitch": true,
     "noImplicitReturns": true,
     "forceConsistentCasingInFileNames": true,
-    "lib": ["ES2020", "DOM"],
+    "lib": ["ES2021", "DOM"],
     "importHelpers": true,
     "resolveJsonModule": true,
     "strict": true
