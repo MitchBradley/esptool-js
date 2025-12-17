@@ -64,6 +64,7 @@ class Transport {
   private lastTraceTime = Date.now();
   private buffer: Uint8Array = new Uint8Array(0);
   private onDeviceLostCallback: (() => void) | null = null;
+  private reader: (ReadableStreamDefaultReader<Uint8Array> | undefined) = undefined;
 
   constructor(public device: SerialPort, public tracing = false, enableSlipReader = true) {
     this.slipReaderEnabled = enableSlipReader;
@@ -208,19 +209,20 @@ class Transport {
   /**
    * Read from serial device with a timeout
    * @param {number} milliseconds to wait
-   * @returns {Uint8Array} empty array on timeout, undefined on fatal error.
+   * @returns {Uint8Array} data, or empty array on timeout
+   * @throw {Error | TypeError} Any unrecoverable situation throws an error
    */
-  async timedRead(timeout: number): Promise<Uint8Array | undefined> {
+  async timedRead(timeout: number): Promise<Uint8Array> {
     while (this.device.readable) {
       try {
-        const reader = this.device.readable.getReader();
-        const timer = setTimeout(() => { reader.releaseLock(); }, timeout);
-        const { value, done } = await reader.read();
+        this.reader = this.device.readable.getReader();
+        const timer = setTimeout(() => { this.reader?.releaseLock(); }, timeout);
+        const { value, done } = await this.reader.read();
         clearTimeout(timer);
-        reader.releaseLock();
+        this.reader.releaseLock();
 
         if (done) {
-          return undefined;
+          throw new Error("Serial port closed");
         }
         // We do not expect value.length to be 0 because
         // read() only returns when it has data.
@@ -237,23 +239,26 @@ class Transport {
           }
           const nonFatal = [ 'BufferOverrunError', 'FramingError', 'BreakError', 'ParityError' ];
           if (nonFatal.includes(error.name)) {
-            // Retryable
+            // Retry on non-fatal errors
             continue;
           }
           if (error.name === "NetworkError" && error.message.includes("device has been lost")) {
             this.trace("Device lost detected (NetworkError)");
             if (this.onDeviceLostCallback) {
+              // The callback can choose to throw an error or not
               this.onDeviceLostCallback();
+            } else {
+              throw error;
             }
           }
 
         }
         // Probably port disconnected or something like that
         console.error("Serial port error:", error);
-        return undefined;
+        throw error;
        }
     }
-    return new Uint8Array(0);
+    throw new Error("Serial port closed");
   }
 
   /*
@@ -262,7 +267,7 @@ class Transport {
   async nextByte(timeout: number): Promise<number | undefined> {
     if (this.buffer.length === 0) {
       const readBytes = await this.timedRead(timeout);
-      if (readBytes === undefined || readBytes.length === 0) {
+      if (readBytes.length === 0) {
         return undefined;
       }
       this.trace(`Read ${readBytes.length} bytes: ${this.hexConvert(readBytes)}`);
@@ -371,10 +376,10 @@ class Transport {
         } else {
           this.trace(`Read invalid data: ${this.hexConvert(new Uint8Array([byte]))}`);
           const remainingData = await this.timedRead(timeout);
-          if (remainingData !== undefined) {
-             this.trace(`Remaining data in serial buffer: ${this.hexConvert(remainingData)}`);
+          if (remainingData.length) {
+            this.trace(`Remaining data in serial buffer: ${this.hexConvert(remainingData)}`);
             this.detectPanicHandler(new Uint8Array([...new Uint8Array([byte]), ...(remainingData || [])]));
-           }
+          }
           throw new Error(`Invalid head of packet (0x${byte.toString(16)}): Possible serial noise or corruption.`);
         }
       } else if (isEscaping) {
@@ -461,22 +466,16 @@ class Transport {
   }
 
   /**
-   * Wait for a given timeout ms for serial device unlock.
-   * @param {number} timeout Timeout time in milliseconds (ms) to sleep
-   */
-  async waitForUnlock(timeout: number) {
-    while (
-      (this.device.readable && this.device.readable.locked) ||
-      (this.device.writable && this.device.writable.locked)
-    ) {
-      await sleep(timeout);
-    }
-  }
-
-  /**
    * Disconnect from serial device by running SerialPort.close() after streams unlock.
    */
   async disconnect() {
+    while (this.device.readable?.locked) {
+      this.reader?.cancel();
+      await sleep(10);
+    }
+    while (this.device.writable?.locked) {
+      await sleep(10);
+    }
     await this.device.close();
   }
 }

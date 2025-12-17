@@ -324,16 +324,10 @@ async function startConsoleReading() {
   if (isConsoleClosed || !transport) return;
 
   try {
-    const readLoop = transport.rawRead();
-
     while (true && !isConsoleClosed) {
-      const { value, done } = await readLoop.next();
-
-      if (done || !value) {
-        break;
-      }
-
-      if (value) {
+      const value = await transport.timedRead(500);
+      // Value will be zero length on timeout
+      if (value.length) {
         term.write(value);
       }
     }
